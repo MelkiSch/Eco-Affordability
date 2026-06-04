@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Belgium Eco-Housing Livability Map</title>
+    
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="app.css">
+</head>
+<body class="bg-slate-950 text-slate-100 flex h-screen overflow-hidden">
+
+    <!-- Sidebar / Control Panel -->
+    <aside class="sidebar w-full md:w-[480px] h-full flex flex-col z-[1000] absolute md:relative glass-panel shadow-2xl transition-all duration-300 pointer-events-auto">
+        
+        <!-- Header -->
+        <header class="p-6 border-b border-slate-800 bg-slate-900/60 flex flex-col gap-2">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-teal-500 rounded-lg flex items-center justify-center font-bold text-slate-900 text-lg shadow-lg shadow-teal-500/25">BE</div>
+                <h1 class="text-xl font-bold tracking-tight text-slate-50">Eco-Housing Map</h1>
+            </div>
+            <p class="text-xs text-slate-400">
+                Explore the intersection of Belgian real estate prices and nature quality indicators (PFAS, Air Pollution, Organic Farmland).
+            </p>
+        </header>
+
+        <!-- Sidebar Content (Scrollable) -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            <!-- Address/Commune Search -->
+            <section class="space-y-2">
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Search Location</h2>
+                <div class="relative">
+                    <div class="flex gap-2">
+                        <input id="search-input" type="text" placeholder="Type commune or address..." 
+                               class="w-full bg-slate-900/80 border border-slate-700/60 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 transition-all placeholder-slate-500" />
+                        <button id="search-btn" class="bg-teal-600 hover:bg-teal-500 text-slate-900 font-semibold px-4 rounded-xl text-sm transition-all shadow-lg shadow-teal-600/20">
+                            Search
+                        </button>
+                    </div>
+                    <!-- Autocomplete dropdown -->
+                    <ul id="search-results" class="absolute left-0 right-0 mt-2 bg-slate-800/95 border border-slate-700/60 rounded-xl shadow-2xl z-[1100] max-h-60 overflow-y-auto hidden backdrop-blur-md"></ul>
+                </div>
+                <div id="search-status" class="text-xs text-teal-400 italic hidden"></div>
+            </section>
+
+            <!-- Map Visualization Mode Toggle -->
+            <section class="space-y-3">
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Visualization Mode</h2>
+                <div class="grid grid-cols-2 gap-2 bg-slate-900/60 p-1.5 rounded-xl border border-slate-800">
+                    <button id="btn-mode-bivariate" class="py-2 text-xs font-semibold rounded-lg transition-all bg-teal-600 text-white shadow-md">
+                        Eco vs Price Matrix
+                    </button>
+                    <button id="btn-mode-single" class="py-2 text-xs font-semibold rounded-lg transition-all bg-slate-800 text-slate-300 hover:text-white">
+                        Sweet Spot Index
+                    </button>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-normal">
+                    <strong>Bivariate Matrix</strong> plots nature score against housing prices. 
+                    <strong>Sweet Spot Index</strong> calculates a single, customized grade based on the weights below.
+                </p>
+            </section>
+
+            <!-- Weight Sliders (Custom Score Calibration) -->
+            <section id="weight-controls" class="space-y-4 opacity-40 pointer-events-none transition-all duration-300">
+                <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Sweet Spot Calibration</h2>
+                
+                <!-- Price Weight -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">Affordability Weight (Low Price)</span>
+                        <span id="price-weight-val" class="font-medium text-teal-400">30%</span>
+                    </div>
+                    <input id="price-weight" type="range" min="0" max="100" value="30" />
+                </div>
+
+                <!-- PFAS Weight -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">PFAS Cleanliness Weight</span>
+                        <span id="pfas-weight-val" class="font-medium text-teal-400">30%</span>
+                    </div>
+                    <input id="pfas-weight" type="range" min="0" max="100" value="30" />
+                </div>
+
+                <!-- Air Quality Weight -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">Air Cleanliness Weight</span>
+                        <span id="air-weight-val" class="font-medium text-teal-400">20%</span>
+                    </div>
+                    <input id="air-weight" type="range" min="0" max="100" value="20" />
+                </div>
+
+                <!-- Organic Farmland Weight -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-400">Organic Farming Weight</span>
+                        <span id="organic-weight-val" class="font-medium text-teal-400">20%</span>
+                    </div>
+                    <input id="organic-weight" type="range" min="0" max="100" value="20" />
+                </div>
+            </section>
+
+            <!-- Dynamic Statistics Panel -->
+            <section class="border-t border-slate-800 pt-6">
+                <!-- Selected Municipality Details -->
+                <div id="detail-panel" class="space-y-5 hidden animate-fade-in">
+                    <div>
+                        <h2 id="detail-name" class="text-2xl font-bold text-white tracking-tight"></h2>
+                        <p id="detail-region-province" class="text-xs text-slate-400 font-medium"></p>
+                    </div>
+
+                    <!-- Scores & Metrics Grid -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+                            <span class="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">Sweet Spot Score</span>
+                            <span id="detail-score" class="text-3xl font-bold"></span>
+                        </div>
+                        <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between">
+                            <span class="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">Median Price</span>
+                            <span id="detail-price" class="text-2xl font-bold text-white tracking-tight"></span>
+                        </div>
+                    </div>
+
+                    <!-- Indicators List -->
+                    <div class="space-y-3 bg-slate-900/40 border border-slate-900 p-4 rounded-xl">
+                        <!-- PFAS -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">PFAS Contamination (lower is better)</span>
+                                <span id="detail-pfas" class="font-semibold text-slate-200"></span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div id="progress-pfas" class="h-2 rounded bg-emerald-500 transition-all duration-500"></div>
+                            </div>
+                        </div>
+
+                        <!-- Air Quality -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Air Pollution (lower is better)</span>
+                                <span id="detail-air" class="font-semibold text-slate-200"></span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div id="progress-air" class="h-2 rounded bg-emerald-500 transition-all duration-500"></div>
+                            </div>
+                        </div>
+
+                        <!-- Organic Farming -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Organic Farming Land %</span>
+                                <span id="detail-organic" class="font-semibold text-slate-200"></span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div id="progress-organic" class="h-2 rounded bg-emerald-500 transition-all duration-500"></div>
+                            </div>
+                        </div>
+
+                        <!-- Price Index Bar -->
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="text-slate-400">Price Percentile (lower is better)</span>
+                                <span class="font-semibold text-slate-200">Price Position</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                <div id="progress-price" class="h-2 rounded bg-emerald-500 transition-all duration-500"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Chart -->
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Comparison Dashboard</h3>
+                        <div class="h-48 w-full bg-slate-900/60 border border-slate-850 p-2 rounded-xl">
+                            <canvas id="comparison-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State / Placeholder -->
+                <div id="placeholder-panel" class="text-center py-16 px-4 space-y-3">
+                    <div class="w-12 h-12 bg-slate-900 border border-slate-800 rounded-full flex items-center justify-center mx-auto text-slate-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-semibold text-slate-350">No Commune Selected</h3>
+                        <p class="text-xs text-slate-500 max-w-xs mx-auto leading-normal">
+                            Search for an address or click a municipality on the map to explore details.
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer / Credits -->
+        <footer class="p-4 border-t border-slate-900 bg-slate-950/80 text-[10px] text-slate-500 text-center flex justify-between px-6">
+            <span>Data: Statbel / ISSeP / CELINE</span>
+            <span>Created for GitHub</span>
+        </footer>
+    </aside>
+
+    <!-- Main Map Container -->
+    <main class="flex-1 relative h-full">
+        <!-- Floating Interactive Legend Card -->
+        <div class="absolute bottom-6 left-6 z-[1000] pointer-events-auto">
+            <!-- Bivariate Map Legend -->
+            <div id="bivariate-legend-container" class="glass-panel p-5 rounded-2xl shadow-xl border border-slate-800 space-y-3 max-w-[260px]">
+                <div class="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <span class="text-xs font-bold text-white tracking-wide uppercase">Bivariate Matrix Key</span>
+                    <div class="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div>
+                </div>
+                
+                <div class="flex gap-4 items-center">
+                    <!-- 3x3 Color Matrix Grid -->
+                    <div class="bivariate-matrix shrink-0">
+                        <!-- Row 3 (Clean) -->
+                        <div class="bivariate-cell" style="background-color: #4f46e5;" title="Clean & Expensive"></div>
+                        <div class="bivariate-cell" style="background-color: #0ea5e9;" title="Clean & Mid Price"></div>
+                        <div class="bivariate-cell" style="background-color: #059669;" title="Clean & Cheap (SWEET SPOT)"></div>
+                        <!-- Row 2 (Medium) -->
+                        <div class="bivariate-cell" style="background-color: #c084fc;" title="Medium & Expensive"></div>
+                        <div class="bivariate-cell" style="background-color: #cbd5e1;" title="Medium & Mid Price"></div>
+                        <div class="bivariate-cell" style="background-color: #a7f3d0;" title="Medium & Cheap"></div>
+                        <!-- Row 1 (Dirty) -->
+                        <div class="bivariate-cell" style="background-color: #7f1d1d;" title="Dirty & Expensive (WORST SPOT)"></div>
+                        <div class="bivariate-cell" style="background-color: #f87171;" title="Dirty & Mid Price"></div>
+                        <div class="bivariate-cell" style="background-color: #d97706;" title="Dirty & Cheap"></div>
+                    </div>
+                    
+                    <div class="text-[10px] text-slate-400 space-y-1.5 leading-tight">
+                        <div class="flex items-center gap-1.5"><span class="color-swatch" style="background-color: #059669;"></span> <strong>Sweet Spot</strong> (Clean, Cheap)</div>
+                        <div class="flex items-center gap-1.5"><span class="color-swatch" style="background-color: #7f1d1d;"></span> <strong>Worst Spot</strong> (Dirty, Expensive)</div>
+                        <div class="flex items-center gap-1.5"><span class="color-swatch" style="background-color: #4f46e5;"></span> <strong>Premium Haven</strong> (Clean, Expensive)</div>
+                        <div class="flex items-center gap-1.5"><span class="color-swatch" style="background-color: #d97706;"></span> <strong>Affordable Hazard</strong> (Dirty, Cheap)</div>
+                    </div>
+                </div>
+                
+                <div class="text-[9px] text-slate-500 text-center leading-normal border-t border-slate-850 pt-2 flex justify-between">
+                    <span>← Dirty to Clean (↑)</span>
+                    <span>Expensive to Cheap (→)</span>
+                </div>
+            </div>
+
+            <!-- Single Index Legend (Initially Hidden) -->
+            <div id="single-legend-container" class="glass-panel p-4 rounded-xl shadow-xl border border-slate-800 space-y-2 hidden min-w-[200px]">
+                <span class="text-xs font-bold text-white uppercase tracking-wide block">Sweet Spot Index</span>
+                <div class="flex items-center gap-2">
+                    <div class="h-3 w-full rounded-md" style="background: linear-gradient(to right, #dc2626, #f97316, #eab308, #84cc16, #059669);"></div>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 font-medium">
+                    <span>Worst Spot (Hazard)</span>
+                    <span>Sweet Spot (Best)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- The Map -->
+        <div id="map"></div>
+    </main>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- TopoJSON Client library -->
+    <script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+    
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Main JS Application -->
+    <script src="app.js"></script>
+</body>
+</html>
